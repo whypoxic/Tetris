@@ -7,6 +7,7 @@
 // 2025-09-16 增加了行满检测与消除逻辑
 // 2025-09-16 增加了游戏结束逻辑
 // 2025-09-17 增加了 Game Over 纹理画面
+// 2025-09-17 增加了分数系统
 
 
 // ====== 说明 ======
@@ -27,6 +28,7 @@
 #include <ctime>
 #include <cstring>
 #include "texture.h" // 纹理加载
+#include "stb_easy_font.h" // 字体渲染
 
 
 // === 棋盘大小 ===
@@ -66,7 +68,8 @@ const float RepeatInterval = 0.05f; // 键盘灵敏度（长按间隔）
 bool gameOver = false;
 const char* gameOverTexturePath = "photos/gameover.png"
                                   ;
-
+// === 分数系统 ===
+int score = 0;// 分数
 
 // ======= 方块定义 =======
 // 定义形状 7
@@ -395,6 +398,9 @@ void clearFullLines() {
             }
         }//满行判别
         if (full) {
+            score += 100; // 每消一行加100分
+            std::cout << "Line cleared! Score: " << score << std::endl;
+
             // 把这一行之上的所有行往下移一行
             for (int yy = y; yy < BOARD_HEIGHT - 1; ++yy) {
                 for (int x = 0; x < BOARD_WIDTH; ++x) {
@@ -467,6 +473,131 @@ void drawGameOverScreen() {
     glDeleteVertexArrays(1, &vao);
 
     glDisable(GL_BLEND);
+}
+
+// ===== 绘制分数系统 =====
+void drawScore() {
+
+    /*
+     *文本传入，用一个quads接受
+     *quads中：四个float为一个顶点的xyuv；我们只需要xy
+     *然后转换为OpenGL坐标系
+     *转化成两个三角形顶点
+     */
+
+    float scale = 3.0f; // 字体缩放
+
+    char buf[32];// 文本缓冲区
+    sprintf(buf, "Score: %d", score);
+
+    float quads[99999]; // stb_easy_font 顶点缓存
+    int num_quads = stb_easy_font_print(10, 10, buf, NULL, quads, sizeof(quads));
+    float* verts = (float*)quads;
+
+    // std::cout << "num_quads=" << num_quads << std::endl;
+    // for (int i = 0; i < num_quads * 4 ; i+=4) {
+    //     std::cout << "(" << verts[i] << "," << verts[i+1] << ") ";
+    //     //std::cout << verts[i] << " ";
+    // }
+    // //std::cout << std::endl;
+
+    // 右上角偏移
+    float xOffset = WINDOW_WIDTH - strlen(buf) * scale * 8.0f - 10.0f; // 每字符（8px * 缩放） 宽 + 10px边距
+    float yOffset = 10.0f; // 顶部边距10px
+
+    // 转换每个 quad 为两组三角形顶点
+    int num_vertices = num_quads * 6; // 每个 quad 2 三角形 = 6 顶点
+    std::vector<glm::vec2> triVerts(num_vertices);
+    for(int i=0; i<num_quads; i++) {
+        float* q = verts + i * 16; // quad 中 一个顶点四个float
+
+        // 提取4个顶点的xy
+        float x0=q[0],  y0=q[1];
+        float x1=q[4],  y1=q[5];
+        float x2=q[8],  y2=q[9];
+        float x3=q[12], y3=q[13];
+
+        // 偏移
+        x0*=scale; y0*=scale;
+        x1*=scale; y1*=scale;
+        x2*=scale; y2*=scale;
+        x3*=scale; y3*=scale;
+
+        // 偏移到屏幕位置
+        x0+=xOffset; y0+=yOffset;
+        x1+=xOffset; y1+=yOffset;
+        x2+=xOffset; y2+=yOffset;
+        x3+=xOffset; y3+=yOffset;
+
+        // 转换到OpenGL [-1,1]
+        auto toGL = [&](float x,float y){
+            return glm::vec2(
+                2.0f*x / WINDOW_WIDTH - 1.0f,
+                1.0f - 2.0f*y / WINDOW_HEIGHT
+            );
+        };
+
+        glm::vec2 v0 = toGL(x0,y0);
+        glm::vec2 v1 = toGL(x1,y1);
+        glm::vec2 v2 = toGL(x2,y2);
+        glm::vec2 v3 = toGL(x3,y3);
+
+        // 写两个三角形
+        triVerts[i*6 + 0] = v0;
+        triVerts[i*6 + 1] = v1;
+        triVerts[i*6 + 2] = v2;
+
+        triVerts[i*6 + 3] = v0;
+        triVerts[i*6 + 4] = v2;
+        triVerts[i*6 + 5] = v3;
+    }
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    glUseProgram(programColor); // 使用颜色着色器
+
+    GLuint vao, vbo;
+    glGenVertexArrays(1, &vao);
+    glBindVertexArray(vao);
+    glGenBuffers(1, &vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, triVerts.size() * sizeof(glm::vec2), triVerts.data(), GL_DYNAMIC_DRAW);
+
+    GLuint posLoc = glGetAttribLocation(programColor, "vPosition");
+    glEnableVertexAttribArray(posLoc);
+    glVertexAttribPointer(posLoc, 2, GL_FLOAT, GL_FALSE, sizeof(glm::vec2), (void*)0);
+
+    // 设置文字颜色为白色
+    GLuint colorLoc = glGetAttribLocation(programColor, "vColor");
+    glVertexAttrib3f(colorLoc, 1.0f, 1.0f, 1.0f);
+
+    glDrawArrays(GL_TRIANGLES, 0, num_vertices);
+
+    glDisableVertexAttribArray(posLoc);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+    glDeleteBuffers(1, &vbo);
+    glDeleteVertexArrays(1, &vao);
+
+    glDisable(GL_BLEND);
+
+    /*
+     * 测试用例
+
+    glm::vec2 verts[6] = {{-0.9f,0.9f},{-0.8f,0.9f},{-0.8f,0.8f},{-0.9f,0.9f},{-0.8f,0.8f},{-0.9f,0.8f}};
+    glUseProgram(programColor);
+    GLuint vao, vbo;
+    glGenVertexArrays(1,&vao); glBindVertexArray(vao);
+    glGenBuffers(1,&vbo); glBindBuffer(GL_ARRAY_BUFFER,vbo);
+    glBufferData(GL_ARRAY_BUFFER,sizeof(verts),verts,GL_STATIC_DRAW);
+    GLuint posLoc = glGetAttribLocation(programColor,"vPosition");
+    glEnableVertexAttribArray(posLoc);
+    glVertexAttribPointer(posLoc,2,GL_FLOAT,GL_FALSE,0,(void*)0);
+    GLuint colorLoc = glGetAttribLocation(programColor,"vColor");
+    glVertexAttrib3f(colorLoc,1,1,1);
+    glDrawArrays(GL_TRIANGLES,0,6);
+    */
 }
 
 
@@ -590,10 +721,11 @@ int main(int argc,char**argv) {
         double deltaTime = currentTime - lastTime;
         lastTime = currentTime;
 
-        // 绘制：先边框，再已固定的方块，再当前方块
+        // 绘制：先边框，再已固定的方块，再当前方块;化分数
         drawBorder();
         drawBoard();
         drawCurrentPiece();
+        drawScore();
 
         // === 结束与否 ===
         if (!gameOver) {
