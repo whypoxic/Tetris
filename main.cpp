@@ -66,8 +66,8 @@ const float RepeatInterval = 0.05f; // 键盘灵敏度（长按间隔）
 
 // === Game Over 相关 ===
 bool gameOver = false;
-const char* gameOverTexturePath = "photos/gameover.png"
-                                  ;
+const char* gameOverTexturePath = "photos/gameover.png";
+
 // === 分数系统 ===
 int score = 0;// 分数
 
@@ -128,14 +128,16 @@ std::vector<glm::vec3> shapeColors = { // 颜色对应方块
     {1.0f,0.5f,0.0f}    // L 橙色
 };
 
-// === 当前方块 ===
+// === 定义方块 ===
 struct Tetromino {
     Shape shape;
     int x; // 左上角列索引（0 ~ BOARD_WIDTH-1）
     int y; // 左上角行索引（0 ~ BOARD_HEIGHT-1）
     glm::vec3 color;
     int id; // 1..7
-} currentPiece;
+};// 定义两个方块实例
+Tetromino currentPiece;    // 当前下落的方块
+Tetromino nextPiece;       // 下一个方块
 
 // OpenGL程序
 GLuint programColor, programTexture; // 着色器程序（颜色/纹理）
@@ -172,7 +174,7 @@ bool isOutOfBounds(const Tetromino& piece) {
     return false;
 }
 
-// 锁定当前方块到 board（固化）
+// 锁定当前方块到 board（固化方块）
 void lockPieceToBoard() {
     for (int i=0; i<TETROMINO_SIZE; ++i) {
         for (int j=0; j<TETROMINO_SIZE; ++j) {
@@ -302,23 +304,62 @@ void drawCurrentPiece() {
     }
 }
 
+// === 方块生成 ===
+// 下一个方块 预览区域
+void drawNextPiece() {
+    if (nextPiece.id == 0) return; // 尚未初始化
+
+    // 预览区域参数：放在棋盘右侧稍微偏上
+    float gap = 0.2f;
+    float previewCell = CELL_SIZE ; //
+    float previewLeft = maxX + gap;       // 预览区域左边
+    float previewTop  = maxY - previewCell * 4.0f - gap; // 4 行高度区域
+
+    // 预览格
+    for (int i=0;i<TETROMINO_SIZE;i++){
+        for (int j=0;j<TETROMINO_SIZE;j++){
+            if (nextPiece.shape[i][j]) {
+                float x = previewLeft + j * previewCell;
+                // 注意 y 方向：minY 是底部，所以向上要加
+                float y = previewTop + (TETROMINO_SIZE - i) * previewCell;
+                drawCell(x, y, nextPiece.color);
+            }
+        }
+    }
+}
+
+
 void clearFullLines();
 // 随机生成一个方块（居顶并居中），并分配 id/color
 void spawnNewPiece() {
     clearFullLines();// 生成新方块前先检查并消行
 
-    int idx = rand() % allShapes.size();
-    currentPiece.shape = allShapes[idx];
-    currentPiece.id = idx + 1; // id 1..7
+    if (nextPiece.id == 0) {// 首次初始化
+        int idx = rand() % allShapes.size();
+        currentPiece.shape = allShapes[idx];
+        currentPiece.id = idx + 1;
+        currentPiece.x = (BOARD_WIDTH - TETROMINO_SIZE) / 2;
+        currentPiece.y = BOARD_HEIGHT - TETROMINO_SIZE;
+        currentPiece.color = shapeColors[idx];
 
-    // 横向居中
-    currentPiece.x = (BOARD_WIDTH - TETROMINO_SIZE) / 2;
-    // 顶部起始行（让方块在界内的最高位置）
-    currentPiece.y = BOARD_HEIGHT - TETROMINO_SIZE;
-    currentPiece.color = shapeColors[idx];
+        int idx2 = rand() % allShapes.size();
+        nextPiece.shape = allShapes[idx2];
+        nextPiece.id = idx2 + 1;
+        nextPiece.color = shapeColors[idx2];
+    }
+    else {
+        currentPiece = nextPiece; // 使用预生成的方
+        // 顶部 横向居中
+        currentPiece.x = (BOARD_WIDTH - TETROMINO_SIZE) / 2;
+        currentPiece.y = BOARD_HEIGHT - TETROMINO_SIZE;
 
-
-    std::cout << "new cube idx=" << idx << " id=" << currentPiece.id << std::endl;
+        // 预生成下一个方块
+        int idx = rand() % allShapes.size();
+        nextPiece.shape = allShapes[idx];
+        nextPiece.id = idx + 1;
+        nextPiece.color = shapeColors[idx];
+    }
+    std::cout << "current id=" << currentPiece.id << std::endl;
 
     accelerate = false; // 重置加速状态
 
@@ -333,6 +374,9 @@ void spawnNewPiece() {
 
     }
 }
+
+
+
 
 // 绘制棋盘边框
 void drawBorder() {
@@ -721,11 +765,12 @@ int main(int argc,char**argv) {
         double deltaTime = currentTime - lastTime;
         lastTime = currentTime;
 
-        // 绘制：先边框，再已固定的方块，再当前方块;化分数
-        drawBorder();
-        drawBoard();
-        drawCurrentPiece();
-        drawScore();
+        // 绘制
+        drawBorder();// 绘制边框
+        drawBoard();// 绘制已固定方块
+        drawCurrentPiece();// 绘制当前方块
+        drawScore();// 绘制分数
+        drawNextPiece();// 绘制下一个方块预览
 
         // === 结束与否 ===
         if (!gameOver) {
