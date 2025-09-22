@@ -1,10 +1,11 @@
 // texture.cpp
 // Created by why on 2025/9/17.
+// Texture 实现文件
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #include "Angel.h"
-#include "texture.h"
+#include "Texture.h"
 
 // 纹理加载函数
 GLuint loadTexture(const char* path){

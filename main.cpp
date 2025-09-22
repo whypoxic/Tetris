@@ -26,9 +26,10 @@
 #include <vector>
 #include <cstdlib>
 #include <ctime>
-#include <cstring>
+#include <string>
 #include "texture.h" // 纹理加载
 #include "stb_easy_font.h" // 字体渲染
+#include "TextRender.h" // 文本渲染
 
 
 // === 棋盘大小 ===
@@ -70,6 +71,13 @@ const char* gameOverTexturePath = "photos/gameover.png";
 
 // === 分数系统 ===
 int score = 0;// 分数
+
+// === 字体渲染相关 ===
+float charWidth  = 6.0f ; // 字体宽高（像素）（后续需要根据缩放乘系数）
+float charHeight = 8.0f ;
+
+// === 暂停与运行 ===
+bool paused = false;
 
 // ======= 方块定义 =======
 // 定义形状 7
@@ -309,7 +317,18 @@ void drawCurrentPiece() {
 void drawNextPiece() {
     if (nextPiece.id == 0) return; // 尚未初始化
 
-    // 预览区域参数：放在棋盘右侧稍微偏上
+    // 预览下一个文字
+    TextRenderer textRenderer(WINDOW_WIDTH, WINDOW_HEIGHT, programColor);
+    // 每帧绘制
+    std::string s = "Next: ";
+    float scale = 3.0f;
+    float textWidth = s.length() * charWidth * scale + 32; // 预留4格宽度
+    float x = WINDOW_WIDTH - textWidth; // 右上角
+    float y = 100.0f; // 顶部
+    textRenderer.drawText(s,
+                          x, y, scale, glm::vec3(1.0f, 1.0f, 1.0f));
+
+    // 预览区域参数：放在棋盘右侧稍微偏上(基于minXY）
     float gap = 0.2f;
     float previewCell = CELL_SIZE ; //
     float previewLeft = maxX + gap;       // 预览区域左边
@@ -374,8 +393,6 @@ void spawnNewPiece() {
 
     }
 }
-
-
 
 
 // 绘制棋盘边框
@@ -519,129 +536,34 @@ void drawGameOverScreen() {
     glDisable(GL_BLEND);
 }
 
+// 绘制暂停文字
+void drawPausedScreen() {
+    // 绘制暂停文字
+    TextRenderer textRenderer(WINDOW_WIDTH, WINDOW_HEIGHT, programColor);
+    std::string s = "Paused";
+    float scale = 5.0f;
+    float textWidth = s.length() * charWidth * scale;
+    float textHeight = scale * charHeight * scale;
+    float x = (WINDOW_WIDTH - textWidth) / 2.0f; // 居中
+    float y = (WINDOW_HEIGHT - textHeight) / 2.0f;
+    textRenderer.drawText(s,
+                        x, y, scale, glm::vec3(1.0f, 1.0f, 1.0f));
+}
+
 // ===== 绘制分数系统 =====
-void drawScore() {
+void drawScore() {    //
 
-    /*
-     *文本传入，用一个quads接受
-     *quads中：四个float为一个顶点的xyuv；我们只需要xy
-     *然后转换为OpenGL坐标系
-     *转化成两个三角形顶点
-     */
+    TextRenderer textRenderer(WINDOW_WIDTH, WINDOW_HEIGHT, programColor);
+    // 每帧绘制
+    std::string s = "Score: " + std::to_string(score);
+    float scale = 3.0f;
+    float textWidth = s.length() * charWidth * scale;
+    float textHeight = scale * charHeight * scale;
+    float x = WINDOW_WIDTH - textWidth; // 右上角
+    float y = 10.0f; // 顶部
+    textRenderer.drawText(s,
+                          x, y, scale, glm::vec3(1.0f, 1.0f, 1.0f));
 
-    float scale = 3.0f; // 字体缩放
-
-    char buf[32];// 文本缓冲区
-    sprintf(buf, "Score: %d", score);
-
-    float quads[99999]; // stb_easy_font 顶点缓存
-    int num_quads = stb_easy_font_print(10, 10, buf, NULL, quads, sizeof(quads));
-    float* verts = (float*)quads;
-
-    // std::cout << "num_quads=" << num_quads << std::endl;
-    // for (int i = 0; i < num_quads * 4 ; i+=4) {
-    //     std::cout << "(" << verts[i] << "," << verts[i+1] << ") ";
-    //     //std::cout << verts[i] << " ";
-    // }
-    // //std::cout << std::endl;
-
-    // 右上角偏移
-    float xOffset = WINDOW_WIDTH - strlen(buf) * scale * 8.0f - 10.0f; // 每字符（8px * 缩放） 宽 + 10px边距
-    float yOffset = 10.0f; // 顶部边距10px
-
-    // 转换每个 quad 为两组三角形顶点
-    int num_vertices = num_quads * 6; // 每个 quad 2 三角形 = 6 顶点
-    std::vector<glm::vec2> triVerts(num_vertices);
-    for(int i=0; i<num_quads; i++) {
-        float* q = verts + i * 16; // quad 中 一个顶点四个float
-
-        // 提取4个顶点的xy
-        float x0=q[0],  y0=q[1];
-        float x1=q[4],  y1=q[5];
-        float x2=q[8],  y2=q[9];
-        float x3=q[12], y3=q[13];
-
-        // 偏移
-        x0*=scale; y0*=scale;
-        x1*=scale; y1*=scale;
-        x2*=scale; y2*=scale;
-        x3*=scale; y3*=scale;
-
-        // 偏移到屏幕位置
-        x0+=xOffset; y0+=yOffset;
-        x1+=xOffset; y1+=yOffset;
-        x2+=xOffset; y2+=yOffset;
-        x3+=xOffset; y3+=yOffset;
-
-        // 转换到OpenGL [-1,1]
-        auto toGL = [&](float x,float y){
-            return glm::vec2(
-                2.0f*x / WINDOW_WIDTH - 1.0f,
-                1.0f - 2.0f*y / WINDOW_HEIGHT
-            );
-        };
-
-        glm::vec2 v0 = toGL(x0,y0);
-        glm::vec2 v1 = toGL(x1,y1);
-        glm::vec2 v2 = toGL(x2,y2);
-        glm::vec2 v3 = toGL(x3,y3);
-
-        // 写两个三角形
-        triVerts[i*6 + 0] = v0;
-        triVerts[i*6 + 1] = v1;
-        triVerts[i*6 + 2] = v2;
-
-        triVerts[i*6 + 3] = v0;
-        triVerts[i*6 + 4] = v2;
-        triVerts[i*6 + 5] = v3;
-    }
-
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-    glUseProgram(programColor); // 使用颜色着色器
-
-    GLuint vao, vbo;
-    glGenVertexArrays(1, &vao);
-    glBindVertexArray(vao);
-    glGenBuffers(1, &vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, triVerts.size() * sizeof(glm::vec2), triVerts.data(), GL_DYNAMIC_DRAW);
-
-    GLuint posLoc = glGetAttribLocation(programColor, "vPosition");
-    glEnableVertexAttribArray(posLoc);
-    glVertexAttribPointer(posLoc, 2, GL_FLOAT, GL_FALSE, sizeof(glm::vec2), (void*)0);
-
-    // 设置文字颜色为白色
-    GLuint colorLoc = glGetAttribLocation(programColor, "vColor");
-    glVertexAttrib3f(colorLoc, 1.0f, 1.0f, 1.0f);
-
-    glDrawArrays(GL_TRIANGLES, 0, num_vertices);
-
-    glDisableVertexAttribArray(posLoc);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindVertexArray(0);
-    glDeleteBuffers(1, &vbo);
-    glDeleteVertexArrays(1, &vao);
-
-    glDisable(GL_BLEND);
-
-    /*
-     * 测试用例
-
-    glm::vec2 verts[6] = {{-0.9f,0.9f},{-0.8f,0.9f},{-0.8f,0.8f},{-0.9f,0.9f},{-0.8f,0.8f},{-0.9f,0.8f}};
-    glUseProgram(programColor);
-    GLuint vao, vbo;
-    glGenVertexArrays(1,&vao); glBindVertexArray(vao);
-    glGenBuffers(1,&vbo); glBindBuffer(GL_ARRAY_BUFFER,vbo);
-    glBufferData(GL_ARRAY_BUFFER,sizeof(verts),verts,GL_STATIC_DRAW);
-    GLuint posLoc = glGetAttribLocation(programColor,"vPosition");
-    glEnableVertexAttribArray(posLoc);
-    glVertexAttribPointer(posLoc,2,GL_FLOAT,GL_FALSE,0,(void*)0);
-    GLuint colorLoc = glGetAttribLocation(programColor,"vColor");
-    glVertexAttrib3f(colorLoc,1,1,1);
-    glDrawArrays(GL_TRIANGLES,0,6);
-    */
 }
 
 
@@ -663,8 +585,11 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
     // 按下时设置按键状态
     if (action == GLFW_PRESS) {
         if (key == GLFW_KEY_LEFT) keyLeftPressed = true;
+
         if (key == GLFW_KEY_RIGHT) keyRightPressed = true;
+
         if (key == GLFW_KEY_DOWN) keyDownPressed = true;
+
         if (key == GLFW_KEY_UP) {
             Tetromino tmp = currentPiece;
             tmp.shape = rotate90(tmp.shape);
@@ -674,6 +599,20 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
         if (key == GLFW_KEY_N) {
             spawnNewPiece();
         }
+
+        // 检测数字 1~7
+        if (key >= GLFW_KEY_1 && key <= GLFW_KEY_7) {
+            int idx = key - GLFW_KEY_1; // 0~6
+            nextPiece.shape = allShapes[idx];
+            nextPiece.id = idx + 1;
+            nextPiece.color = shapeColors[idx];
+        }
+
+        // 按 P 暂停/恢复
+        if (key == GLFW_KEY_P) {
+            paused = !paused; // 切换状态
+        }
+
     }
 
     // 释放时清除按键状态
@@ -773,15 +712,19 @@ int main(int argc,char**argv) {
         drawNextPiece();// 绘制下一个方块预览
 
         // === 结束与否 ===
-        if (!gameOver) {
+        if (!gameOver && !paused) {
             // 处理长按
             handleKeyRepeat(deltaTime);
             // 自动下落
             updateFall(deltaTime);
         }
-        else {
+        else if(gameOver) {
             drawGameOverScreen();
         }
+        else if(paused) {
+            drawPausedScreen();
+        }
+
 
         glfwSwapBuffers(window);
         glfwPollEvents();

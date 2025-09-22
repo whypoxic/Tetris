@@ -23,8 +23,9 @@ aux_source_directory("./" PROJECT_SOURCES)
 add_executable(main #${PROJECT_SOURCES})
 		main.cpp
 		InitShader.cpp
-		# glad.c
-		texture.cpp
+
+		Texture.cpp
+		TextRender.cpp
 )
 target_include_directories(main PRIVATE include)
 
